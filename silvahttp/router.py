@@ -26,6 +26,15 @@ class Router:
             inspect.signature(func).parameters.items()
         }
 
+    @staticmethod
+    def _get_default_args(func):
+        signature = inspect.signature(func)
+        return {
+            k: v.default
+            for k, v in signature.parameters.items()
+            if v.default is not inspect.Parameter.empty
+        }
+
     def add_method(self, method: Methods, path: str, func: Callable[[...], Awaitable[Any]]):
         self.inner_router.add_router(
             SimpleRouter(
@@ -69,9 +78,14 @@ class Router:
             }
         )
 
+        defaults = self._get_default_args(func)
+
         async def wrapped(data: RoutingData):
-            params = data.request_data["method_params"]
+            params: dict = data.request_data["method_params"]
             params.update(data.filters_data)
+
+            if defaults:
+                params.update(defaults)
 
             model = msgspec.convert(
                 params,
