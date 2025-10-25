@@ -10,7 +10,7 @@ from silvanus.routing.simple import SimpleRouter
 from silvanus.strategy.routers import FirstTrueRouterIterator
 from silvanus.structures import RoutingData
 from silvanus.integration.http import get_path_filters, parse_path
-from silvahttp.enums import Methods
+from silvahttp.enums import Methods, nothing
 
 
 class Router:
@@ -27,7 +27,7 @@ class Router:
         }
 
     @staticmethod
-    def _get_default_args(func):
+    def _get_default_args(func) -> dict[str, Any]:
         signature = inspect.signature(func)
         return {
             k: v.default
@@ -35,7 +35,12 @@ class Router:
             if v.default is not inspect.Parameter.empty
         }
 
-    def add_method(self, method: Methods, path: str, func: Callable[[...], Awaitable[Any]]):
+
+    def add_method(
+            self,
+            method: Methods,
+            path: str, func: Callable[[...], Awaitable[Any]]
+    ) -> None:
         self.inner_router.add_router(
             SimpleRouter(
                 filters=get_path_filters(
@@ -49,7 +54,7 @@ class Router:
         )
 
     @staticmethod
-    def _build_method_structures(data: dict[str, Any]):
+    def _build_method_structures(data: dict[str, Any]) -> Any:
         return msgspec.defstruct(
             "MethodParameters",
             data.items()
@@ -73,7 +78,6 @@ class Router:
 
         method_dataclass = self._build_method_structures(
             {
-                "body": body_,
                 **parameters
             }
         )
@@ -100,17 +104,31 @@ class Router:
 
             if data_:
                 request["silva_data"] = data
+                parameters["silva_data"] = data_
 
             request.update(
                 msgspec.structs.asdict(model)
             )
 
-            return await func(**{key: value for key, value in request.items() if key in parameters.keys()})
+            if body_:
+                parameters["body"] = body_
+
+                request["body"] = msgspec.json.decode(
+                    data.request_data["body"],
+                    type=body_,
+                    strict=False
+                )
+
+            paramkeys = parameters.keys()
+            return await func(
+                **{key: value for key, value in request.items()
+                   if key in paramkeys}
+            )
 
         return wrapped
 
 
-    def get(self, path):
+    def get(self, path: str):
         def wrapper(func):
             self.add_method(
                 Methods.GET,
@@ -122,7 +140,7 @@ class Router:
 
         return wrapper
 
-    def post(self, path):
+    def post(self, path: str):
         def wrapper(func):
             self.add_method(
                 Methods.POST,
@@ -134,7 +152,7 @@ class Router:
 
         return wrapper
 
-    def put(self, path):
+    def put(self, path: str):
         def wrapper(func):
             self.add_method(
                 Methods.PUT,
@@ -146,7 +164,7 @@ class Router:
 
         return wrapper
 
-    def delete(self, path):
+    def delete(self, path: str):
         def wrapper(func):
             self.add_method(
                 Methods.DELETE,
@@ -158,7 +176,7 @@ class Router:
 
         return wrapper
 
-    def patch(self, path):
+    def patch(self, path: str):
         def wrapper(func):
             self.add_method(
                 Methods.PATCH,
@@ -170,7 +188,7 @@ class Router:
 
         return wrapper
 
-    def head(self, path):
+    def head(self, path: str):
         def wrapper(func):
             self.add_method(
                 Methods.HEAD,
@@ -183,7 +201,7 @@ class Router:
         return wrapper
 
 
-    def trace(self, path):
+    def trace(self, path: str):
         def wrapper(func):
             self.add_method(
                 Methods.TRACE,
@@ -195,8 +213,20 @@ class Router:
 
         return wrapper
 
+    def options(self, path: str):
+        def wrapper(func):
+            self.add_method(
+                Methods.OPTIONS,
+                path,
+                func
+            )
 
-    def connect(self, path):
+            return func
+
+        return wrapper
+
+
+    def connect(self, path: str):
         def wrapper(func):
             self.add_method(
                 Methods.CONNECT,
@@ -208,10 +238,10 @@ class Router:
 
         return wrapper
 
-    def add_router(self, router: "Router"):
+    def add_router(self, router: "Router") -> None:
         self.inner_router.add_router(router.inner_router)
 
-    def add_routers(self, *routers: "Router"):
+    def add_routers(self, *routers: "Router") -> None:
         inner_routers = [outer_router.inner_router for outer_router in routers]
 
         self.inner_router.add_routers(inner_routers)
@@ -233,15 +263,18 @@ class Router:
         )
 
         data.request_data["method_params"] = {
-            **query,
-           "body": body
+            **query
         }
+        data.request_data["body"] = body
 
         data.request_data["headers"] = headers
 
-        result = await self.inner_router.route(data, iterator=FirstTrueRouterIterator())
+        result = await self.inner_router.route(
+            data,
+            iterator=FirstTrueRouterIterator(on_nothing=nothing)
+        )
 
-        if result is None:
+        if result is nothing:
             raise HTTPException(
                 status_code=HTTP_405_METHOD_NOT_ALLOWED,
                 detail="access denied or method not found"

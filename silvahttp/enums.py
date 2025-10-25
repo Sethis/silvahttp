@@ -6,7 +6,11 @@ class Methods(str, Enum):
     POST = "POST"
     PUT = "PUT"
     DELETE = "DELETE"
+    OPTIONS = "OPTIONS"
     PATCH = "PATCH"
     HEAD = "HEAD"
     TRACE = "TRACE"
     CONNECT = "CONNECT"
+
+
+nothing = object()
