@@ -20,7 +20,7 @@ class Some:
 
 
 @router.get("/some/{number}/{data}")
-async def some_get(number: int, data: str, age: int | None) -> Some:
+async def some_get(number: int, data: str, age: int | None = None) -> Some:
     return Some(number, data, age)
 
 
